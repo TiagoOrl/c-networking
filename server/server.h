@@ -81,9 +81,9 @@ void server_start(unsigned short port)
 
         if (res_read <= 0)
         {
-            net_error("$error: client disconnected abruptly, restarting\n");
+            printf("$error = %ld: client disconnected abruptly, restarting\n", res_read);
             close(client_fd);
-            
+
             client_fd = server_accept_new_conn(&address, server_fd, &addrlen);
             continue;
         }
