@@ -1,6 +1,6 @@
 
 all:
-	gcc ./main.c -o app -g
+	gcc ./main.c -o app_client -g
 
 cl:
-	rm *.o 
+	rm app_client

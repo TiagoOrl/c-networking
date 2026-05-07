@@ -24,14 +24,24 @@ void net_error(const char* msg)
     exit(EXIT_FAILURE);
 }
 
-
-void start(const char* ip, unsigned short port)
+int server_accept_new_conn(struct sockaddr_in* address, int server_fd, socklen_t * addrlen)
 {
-    int server_fd, new_socket;
-    size_t valread;
+    int client_fd = accept(server_fd, (struct sockaddr*) address, addrlen);
+    if (client_fd < 0)
+        net_error("error on accepting new connections\n");
+
+    printf("$new: client connected\n");
+    return client_fd;
+}
+
+
+void server_start(unsigned short port)
+{
+    int server_fd;
+    size_t res_read;
     struct sockaddr_in address;
-    int opt = 1;
     socklen_t addrlen = sizeof(address);
+    int opt = 1;
     char buffer[1024] = {0};
     char* hello = "hello from server\n";
 
@@ -59,24 +69,43 @@ void start(const char* ip, unsigned short port)
     if (listen_res < 0)
         net_error("error on socket listening\n");
 
-    new_socket = accept(server_fd, (struct sockaddr*) &address, &addrlen);
-    if (new_socket < 0)
-        net_error("error on accepting new connections\n");
+
+
+    int client_fd = server_accept_new_conn(&address, server_fd, &addrlen);
 
     
-    while(strcmp(buffer, "$end"))
+    while(1)
     {
-        valread = read(new_socket, buffer, 1024-1);
-        if (valread < 0)
-            net_error("error on reading into buffer from socket connection\n");
+        memset(&buffer, 0, sizeof(buffer));
+        res_read = read(client_fd, buffer, 1024-1);
+
+        if (res_read <= 0)
+        {
+            net_error("$error: client disconnected abruptly, restarting\n");
+            close(client_fd);
+            
+            client_fd = server_accept_new_conn(&address, server_fd, &addrlen);
+            continue;
+        }
+
+
+        if (strncmp(buffer, "$end", 4) == 0)
+        {
+            printf("$end: connection close request by client.\n");
+            close(client_fd);
+            client_fd = server_accept_new_conn(&address, server_fd, &addrlen);
+            continue;
+        }
+
         
-        printf("%s\n", buffer);
+        if (buffer[0] != 0)
+            printf("%s", buffer);
     }
 
     
-    send(new_socket, hello, strlen(hello), 0);
+    // send(new_socket, hello, strlen(hello), 0);
 
-    close(new_socket);
+    close(client_fd);
     close(server_fd);
 
 }
