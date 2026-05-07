@@ -1,6 +1,6 @@
 
 all:
-	gcc ./main.c -o app_server -g
+	gcc ./main.c -o app -g
 
 cl:
-	rm app_server
+	rm app

@@ -16,6 +16,9 @@
 #include <sys/ioctl.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <sys/wait.h>
+#include <signal.h>
+
 
 
 void net_error(const char* msg)
@@ -27,13 +30,35 @@ void net_error(const char* msg)
 int server_accept_new_conn(struct sockaddr_in* address, int server_fd, socklen_t * addrlen)
 {
     int client_fd = accept(server_fd, (struct sockaddr*) address, addrlen);
-    if (client_fd < 0)
-        net_error("error on accepting new connections\n");
+    if (client_fd < 0) {
+        if (errno == EINTR) {
+            return -2; // Specialized code to tell the loop: "just try again"
+        }
+        return client_fd;
+    }
 
-    printf("$new: client connected\n");
     return client_fd;
 }
 
+void server_client_conn(int client_fd)
+{
+    printf("%d: new connection.\n", getpid());
+    char buffer[1024];
+    while (1)
+    {
+        memset(&buffer, 0, sizeof(buffer));
+        size_t res_read = read(client_fd, buffer, sizeof(buffer) - 1);
+
+        if (res_read <= 0 || strncmp(buffer, "$end", 4) == 0)
+        {
+            printf("%d: client disconnected, exiting\n",  getpid());
+            break;
+        }
+        
+        if (buffer[0] != 0)
+            printf("%d: %s", getpid(),buffer);
+    }
+}
 
 void server_start(unsigned short port)
 {
@@ -70,44 +95,45 @@ void server_start(unsigned short port)
         net_error("error on socket listening\n");
 
 
-
-    int client_fd = server_accept_new_conn(&address, server_fd, &addrlen);
-
     
     while(1)
     {
-        memset(&buffer, 0, sizeof(buffer));
-        res_read = read(client_fd, buffer, 1024-1);
+        int client_fd = 0;
 
-        if (res_read <= 0)
+        client_fd = server_accept_new_conn(&address, server_fd, &addrlen);
+        if (client_fd < 0)
         {
-            printf("$error = %ld: client disconnected abruptly, restarting\n", res_read);
-            close(client_fd);
-
-            client_fd = server_accept_new_conn(&address, server_fd, &addrlen);
+            printf("$error: on accepting new client connection: %d\n", client_fd);
             continue;
         }
 
-
-        if (strncmp(buffer, "$end", 4) == 0)
+        // fork
+        pid_t pid = fork();
+        if (pid < 0)
         {
-            printf("$end: connection close request by client.\n");
-            close(client_fd);
-            client_fd = server_accept_new_conn(&address, server_fd, &addrlen);
+            printf("Process fork failed: %d\n", pid);
             continue;
         }
 
-        
-        if (buffer[0] != 0)
-            printf("%s", buffer);
+        // if its the child process:
+        if (pid == 0)
+        {
+            close(server_fd);
+            server_client_conn(client_fd);
+            close(client_fd);
+            _exit(0);
+        }
+
+        // parent process
+        if (pid > 0)
+        {
+            close(client_fd);
+        }
     }
 
     
     // send(new_socket, hello, strlen(hello), 0);
-
-    close(client_fd);
     close(server_fd);
-
 }
 
 
