@@ -16,8 +16,8 @@
 #include <sys/ioctl.h>
 #include <netinet/in.h>
 #include <netdb.h>
-#include <sys/wait.h>
-#include <signal.h>
+#include <pthread.h>
+#include <stdint.h>
 
 
 
@@ -40,25 +40,31 @@ int server_accept_new_conn(struct sockaddr_in* address, int server_fd, socklen_t
     return client_fd;
 }
 
-void server_client_conn(int client_fd)
+void* server_client_conn(void* arg)
 {
-    printf("%d: new connection.\n", getpid());
+    printf("new connection.\n");
     char buffer[1024];
+    int *client_fd = (int*) arg;
+
     while (1)
     {
         memset(&buffer, 0, sizeof(buffer));
-        size_t res_read = read(client_fd, buffer, sizeof(buffer) - 1);
+        size_t res_read = read(*client_fd, buffer, sizeof(buffer) - 1);
 
         if (res_read <= 0 || strncmp(buffer, "$end", 4) == 0)
         {
-            printf("%d: client disconnected, exiting\n",  getpid());
+            printf("client disconnected, exiting\n");
             break;
         }
         
         if (buffer[0] != 0)
-            printf("%d: %s", getpid(),buffer);
+            printf("%s",buffer);
     }
+
+    close(*client_fd);
+    return NULL;
 }
+
 
 void server_start(unsigned short port)
 {
@@ -95,6 +101,8 @@ void server_start(unsigned short port)
         net_error("error on socket listening\n");
 
 
+    pthread_t *threads = malloc(100 * sizeof(pthread_t));
+    unsigned int thread_c = 0;
     
     while(1)
     {
@@ -107,32 +115,16 @@ void server_start(unsigned short port)
             continue;
         }
 
-        // fork
-        pid_t pid = fork();
-        if (pid < 0)
-        {
-            printf("Process fork failed: %d\n", pid);
-            continue;
-        }
+        int *ptr = malloc(sizeof(int));
+        *ptr = client_fd;
 
-        // if its the child process:
-        if (pid == 0)
-        {
-            close(server_fd);
-            server_client_conn(client_fd);
-            close(client_fd);
-            _exit(0);
-        }
-
-        // parent process
-        if (pid > 0)
-        {
-            close(client_fd);
-        }
+        
+        pthread_create(&threads[thread_c], NULL, server_client_conn, (void*)ptr);
+        thread_c++;
     }
 
+
     
-    // send(new_socket, hello, strlen(hello), 0);
     close(server_fd);
 }
 
