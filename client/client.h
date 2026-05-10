@@ -18,7 +18,7 @@ void net_error(const char* msg)
         exit(EXIT_FAILURE);
 }
 
-void client_connect()
+void client_connect(const char* username)
 {
     int status, valread, client_fd;
     struct sockaddr_in serv_addr;
@@ -47,6 +47,14 @@ void client_connect()
         net_error("Connection failed.\nTrying to connect again.");
     
     char input[100];
+    char* chat_buffer = malloc(56000 * sizeof(char));
+
+    send(client_fd, username, strlen(username), 0);
+
+    printf("\e[1;1H\e[2J");
+    read(client_fd, chat_buffer, 56000 * sizeof(char));
+    printf("%s\n", chat_buffer);
+
     while (1)
     {
         if (strncmp(input, "$end", 4) == 0)
@@ -54,8 +62,15 @@ void client_connect()
 
         memset(input, 0, sizeof(input));
         fgets(input, sizeof(input), stdin);
-        send(client_fd, input, strlen(input), 0);
 
+        char buffer_send[1024];
+
+        snprintf(buffer_send, sizeof(buffer_send), "%s: %s", username, input);
+        send(client_fd, buffer_send, strlen(buffer_send), 0);
+
+        read(client_fd, chat_buffer, 56000 * sizeof(char));
+        printf("\e[1;1H\e[2J");
+        printf("%s\n", chat_buffer);
     }
     
     

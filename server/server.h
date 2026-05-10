@@ -19,7 +19,9 @@
 #include <pthread.h>
 #include <stdint.h>
 
+#define CHAT_BUFFER_SIZE 56000
 
+char* chat_buffer;
 
 void net_error(const char* msg)
 {
@@ -42,9 +44,14 @@ int server_accept_new_conn(struct sockaddr_in* address, int server_fd, socklen_t
 
 void* server_client_conn(void* arg)
 {
-    printf("new connection.\n");
+
     char buffer[1024];
     int *client_fd = (int*) arg;
+
+    read(*client_fd, buffer, sizeof(buffer) - 1);   // get username
+    printf("%s connected\n", buffer);
+
+    send(*client_fd, chat_buffer, CHAT_BUFFER_SIZE * sizeof(char), 0);
 
     while (1)
     {
@@ -58,7 +65,12 @@ void* server_client_conn(void* arg)
         }
         
         if (buffer[0] != 0)
-            printf("%s",buffer);
+        {
+            printf("\e[1;1H\e[2J");
+            strcat(chat_buffer, buffer);
+            send(*client_fd, chat_buffer, CHAT_BUFFER_SIZE * sizeof(char), 0);
+            printf("%s\n", chat_buffer);
+        }
     }
 
     close(*client_fd);
@@ -74,7 +86,8 @@ void server_start(unsigned short port)
     socklen_t addrlen = sizeof(address);
     int opt = 1;
     char buffer[1024] = {0};
-    char* hello = "hello from server\n";
+    chat_buffer = malloc(CHAT_BUFFER_SIZE * sizeof(char));
+
 
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
 
