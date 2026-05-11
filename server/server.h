@@ -20,8 +20,22 @@
 #include <stdint.h>
 
 #define CHAT_BUFFER_SIZE 56000
+#define CHAT_CLIENT_MAX_CONN 100
+
+struct client 
+{
+    int id;
+    int client_fd;
+    char name[40];
+    unsigned char is_connected;
+};
 
 char* chat_buffer;
+pthread_mutex_t lock;
+struct client* clients;
+
+
+
 
 void net_error(const char* msg)
 {
@@ -42,39 +56,83 @@ int server_accept_new_conn(struct sockaddr_in* address, int server_fd, socklen_t
     return client_fd;
 }
 
+
+void server_broadcast(int client_fd)
+{
+
+}
+
 void* server_client_conn(void* arg)
 {
 
     char buffer[1024];
-    int *client_fd = (int*) arg;
+    char tmp_buffer[80];
+    struct client* client = (struct client*) arg;
 
-    read(*client_fd, buffer, sizeof(buffer) - 1);   // get username
-    printf("%s connected\n", buffer);
+    read(client->client_fd, buffer, sizeof(buffer) - 1);   // get username
+    strncpy(client->name, buffer, 20);
+    sprintf(tmp_buffer, "(%i):%s connected\n", client->id, client->name);
+    printf("(%i):%s connected\n", client->id, client->name);
+    strcat(chat_buffer, tmp_buffer);
 
-    send(*client_fd, chat_buffer, CHAT_BUFFER_SIZE * sizeof(char), 0);
+    send(client->client_fd, chat_buffer, CHAT_BUFFER_SIZE * sizeof(char), 0);
 
     while (1)
     {
         memset(&buffer, 0, sizeof(buffer));
-        size_t res_read = read(*client_fd, buffer, sizeof(buffer) - 1);
+        size_t res_read = read(client->client_fd, buffer, sizeof(buffer) - 1);
 
         if (res_read <= 0 || strncmp(buffer, "$end", 4) == 0)
         {
-            printf("client disconnected, exiting\n");
+            printf("(%d)%s disconnected\n", client->id, client->name);
             break;
         }
         
         if (buffer[0] != 0)
         {
             printf("\e[1;1H\e[2J");
+            pthread_mutex_lock(&lock);
+            
             strcat(chat_buffer, buffer);
-            send(*client_fd, chat_buffer, CHAT_BUFFER_SIZE * sizeof(char), 0);
+            send(client->client_fd, chat_buffer, CHAT_BUFFER_SIZE * sizeof(char), 0);
+            pthread_mutex_unlock(&lock);
             printf("%s\n", chat_buffer);
         }
     }
 
-    close(*client_fd);
+    pthread_mutex_lock(&lock);
+    client->is_connected = 0;
+    pthread_mutex_unlock(&lock);
+
+    close(client->client_fd);
     return NULL;
+}
+
+
+int server_get_free_conn_slot()
+{
+    int found = -1;
+    for (int i = 0;i < CHAT_CLIENT_MAX_CONN; i++)
+    {
+        if (clients[i].is_connected == 0)
+        {
+            found = i;
+            break;
+        }
+    }
+
+    return found;
+}
+
+
+void server_init_clients()
+{
+    clients = calloc(CHAT_CLIENT_MAX_CONN, sizeof(struct client));
+
+    for(int i = 0;i < CHAT_CLIENT_MAX_CONN; i++)
+    {
+        clients[i].is_connected = 0;
+    }
 }
 
 
@@ -87,9 +145,10 @@ void server_start(unsigned short port)
     int opt = 1;
     char buffer[1024] = {0};
     chat_buffer = malloc(CHAT_BUFFER_SIZE * sizeof(char));
-
-
+    pthread_mutex_init(&lock, NULL);
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
+
+    server_init_clients();
 
     if (server_fd < 0)
         net_error("socket failed on creation\n");
@@ -113,31 +172,39 @@ void server_start(unsigned short port)
     if (listen_res < 0)
         net_error("error on socket listening\n");
 
-
-    pthread_t *threads = malloc(100 * sizeof(pthread_t));
-    unsigned int thread_c = 0;
     
     while(1)
     {
-        int client_fd = 0;
-
-        client_fd = server_accept_new_conn(&address, server_fd, &addrlen);
+        
+        
+        int client_fd = server_accept_new_conn(&address, server_fd, &addrlen);
         if (client_fd < 0)
         {
             printf("$error: on accepting new client connection: %d\n", client_fd);
             continue;
         }
 
-        int *ptr = malloc(sizeof(int));
-        *ptr = client_fd;
+        int client_slot = server_get_free_conn_slot();
+        if (client_slot < 0)
+        {
+            printf("max number of concurrent clients reached...\n");
+            close(client_fd);
+            continue;
+        }
 
+        clients[client_slot].id = client_slot;
+        clients[client_slot].client_fd = client_fd;
+        clients[client_slot].is_connected = 1;
+
+
+        pthread_t thread;
         
-        pthread_create(&threads[thread_c], NULL, server_client_conn, (void*)ptr);
-        thread_c++;
+        pthread_create(&thread, NULL, server_client_conn, (void*)&clients[client_slot]);
+        pthread_detach(thread);
     }
 
 
-    
+    pthread_mutex_destroy(&lock);
     close(server_fd);
 }
 
