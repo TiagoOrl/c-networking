@@ -73,20 +73,20 @@ void server_broadcast_all(char* c_buffer, unsigned long size)
 void* server_client_conn_thread(void* arg)
 {
 
-    char buffer[1024];
+    char in_buffer[1024];
     char tmp_buffer[80];
     struct client* client = (struct client*) arg;
 
-    int n = read(client->client_fd, buffer, sizeof(buffer) - 1);
+    int n = read(client->client_fd, in_buffer, sizeof(in_buffer) - 1);
 
     if (n > 0) 
-        buffer[n] = '\0'; 
+        in_buffer[n] = '\0'; 
     
-    strncpy(client->name, buffer, 20);
+    strncpy(client->name, in_buffer, 20);
     snprintf(tmp_buffer, 80, "(%i):%s connected\n", client->id, client->name);
     
     pthread_mutex_lock(&lock);
-    strncat(chat_buffer, tmp_buffer, CHAT_BUFFER_SIZE);
+    strncat(chat_buffer, tmp_buffer, strlen(tmp_buffer));
     server_broadcast_all(chat_buffer, strlen(chat_buffer));
     pthread_mutex_unlock(&lock);
 
@@ -97,34 +97,40 @@ void* server_client_conn_thread(void* arg)
 
     while (1)
     {
-        memset(buffer, 0, sizeof(buffer));
-        size_t res_read = read(client->client_fd, buffer, sizeof(buffer) - 1);
+        memset(in_buffer, 0, sizeof(in_buffer));
+        size_t res_read = read(client->client_fd, in_buffer, sizeof(in_buffer) - 1);
 
         if (res_read <= 0)
         {
             memset(tmp_buffer, 0, sizeof(tmp_buffer));
             snprintf(tmp_buffer, 80, "(%d)%s disconnected\n", client->id, client->name);
-            strncat(chat_buffer, tmp_buffer, CHAT_BUFFER_SIZE);
+
+            pthread_mutex_lock(&lock);
+
+            strncat(chat_buffer, tmp_buffer, strlen(tmp_buffer));
 
             printf("\e[1;1H\e[2J");
             printf("%s\n", chat_buffer);
+
+            pthread_mutex_unlock(&lock);
             
             break;
         }
         
-        if (buffer[0] != 0)
+        if (in_buffer[0] != 0)
         {
             printf("\e[1;1H\e[2J");
             pthread_mutex_lock(&lock);
 
-            if (strlen(buffer) + strlen(chat_buffer) < CHAT_BUFFER_SIZE - 1)
+            if (strlen(in_buffer) + strlen(chat_buffer) < CHAT_BUFFER_SIZE - 1)
             {
-                strcat(chat_buffer, buffer);
+                strcat(chat_buffer, in_buffer);
                 server_broadcast_all(chat_buffer, strlen(chat_buffer));
             }
             
-            pthread_mutex_unlock(&lock);
             printf("%s\n", chat_buffer);
+
+            pthread_mutex_unlock(&lock);
             
         }
     }
