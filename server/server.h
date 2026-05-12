@@ -35,13 +35,12 @@ pthread_mutex_t lock;
 struct client* clients;
 
 
-
-
 void net_error(const char* msg)
 {
     perror(msg);
     exit(EXIT_FAILURE);
 }
+
 
 int server_accept_new_conn(struct sockaddr_in* address, int server_fd, socklen_t * addrlen)
 {
@@ -70,7 +69,8 @@ void server_broadcast_all(char* c_buffer, unsigned long size)
     }
 }
 
-void* server_client_conn(void* arg)
+
+void* server_client_conn_thread(void* arg)
 {
 
     char buffer[1024];
@@ -78,14 +78,21 @@ void* server_client_conn(void* arg)
     struct client* client = (struct client*) arg;
 
     int n = read(client->client_fd, buffer, sizeof(buffer) - 1);
-    if (n > 0) buffer[n] = '\0'; 
+
+    if (n > 0) 
+        buffer[n] = '\0'; 
+    
     strncpy(client->name, buffer, 20);
     snprintf(tmp_buffer, 80, "(%i):%s connected\n", client->id, client->name);
     
     pthread_mutex_lock(&lock);
-    strcat(chat_buffer, tmp_buffer);
+    strncat(chat_buffer, tmp_buffer, CHAT_BUFFER_SIZE);
     server_broadcast_all(chat_buffer, strlen(chat_buffer));
     pthread_mutex_unlock(&lock);
+
+
+    printf("\e[1;1H\e[2J");
+    printf("%s\n", chat_buffer);
     
 
     while (1)
@@ -93,9 +100,15 @@ void* server_client_conn(void* arg)
         memset(buffer, 0, sizeof(buffer));
         size_t res_read = read(client->client_fd, buffer, sizeof(buffer) - 1);
 
-        if (res_read <= 0 || strncmp(buffer, "$end", 4) == 0)
+        if (res_read <= 0)
         {
-            printf("(%d)%s disconnected\n", client->id, client->name);
+            memset(tmp_buffer, 0, sizeof(tmp_buffer));
+            snprintf(tmp_buffer, 80, "(%d)%s disconnected\n", client->id, client->name);
+            strncat(chat_buffer, tmp_buffer, CHAT_BUFFER_SIZE);
+
+            printf("\e[1;1H\e[2J");
+            printf("%s\n", chat_buffer);
+            
             break;
         }
         
@@ -215,7 +228,7 @@ void server_start(unsigned short port)
 
         pthread_t thread;
         
-        pthread_create(&thread, NULL, server_client_conn, (void*)&clients[client_slot]);
+        pthread_create(&thread, NULL, server_client_conn_thread, (void*)&clients[client_slot]);
         pthread_detach(thread);
     }
 

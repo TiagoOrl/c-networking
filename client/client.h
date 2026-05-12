@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <pthread.h>
 #define PORT 8080
-
+#define BUFFER_SIZE 56000
 
 char* chat_buffer;
 int retry = 6;
@@ -30,7 +30,7 @@ void* client_read_thread(void* arg)
     while(res_read >= 0)
     {
         printf("\e[1;1H\e[2J");
-        res_read = read(*fd, chat_buffer, 56000 * sizeof(char));
+        res_read = read(*fd, chat_buffer, BUFFER_SIZE * sizeof(char));
         printf("%s\n", chat_buffer);
     }
     
@@ -39,7 +39,7 @@ void* client_read_thread(void* arg)
 
 void client_connect(const char* username)
 {
-    int status, valread, client_fd;
+    int client_fd;
     struct sockaddr_in serv_addr;
     char buffer[1024] = {0};
 
@@ -65,21 +65,23 @@ void client_connect(const char* username)
         net_error("Connection failed.\nTrying to connect again.");
     
     char input[100];
-    chat_buffer = calloc(56000, sizeof(char));
+    chat_buffer = calloc(BUFFER_SIZE, sizeof(char));
 
     send(client_fd, username, strlen(username), 0);
 
 
     pthread_t thread;
     pthread_create(&thread, NULL, client_read_thread, (void*)&client_fd);
+    pthread_detach(thread);
 
     while (1)
     {
+        memset(input, 0, sizeof(input));
+        fgets(input, sizeof(input), stdin);
+
         if (strncmp(input, "$end", 4) == 0)
             goto out;
 
-        memset(input, 0, sizeof(input));
-        fgets(input, sizeof(input), stdin);
 
         char buffer_send[1024];
 
@@ -88,8 +90,6 @@ void client_connect(const char* username)
     }
     
     
-    pthread_join(thread, NULL);
-
 out:
     close(client_fd);
     return;
