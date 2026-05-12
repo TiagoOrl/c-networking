@@ -4,9 +4,13 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <pthread.h>
 #define PORT 8080
 
+
+char* chat_buffer;
 int retry = 6;
+pthread_mutex_t lock;
 
 
 void net_error(const char* msg)
@@ -18,12 +22,29 @@ void net_error(const char* msg)
         exit(EXIT_FAILURE);
 }
 
+
+void* client_read_thread(void* arg)
+{
+    int* fd = (int*) arg;
+    int res_read = 0;
+    
+    while(res_read >= 0)
+    {
+        printf("\e[1;1H\e[2J");
+        res_read = read(*fd, chat_buffer, 56000 * sizeof(char));
+        printf("%s\n", chat_buffer);
+    }
+    
+}
+
+
 void client_connect(const char* username)
 {
     int status, valread, client_fd;
     struct sockaddr_in serv_addr;
-
     char buffer[1024] = {0};
+
+    pthread_mutex_init(&lock, NULL);
 
     client_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (client_fd < 0)
@@ -47,13 +68,13 @@ void client_connect(const char* username)
         net_error("Connection failed.\nTrying to connect again.");
     
     char input[100];
-    char* chat_buffer = malloc(56000 * sizeof(char));
+    chat_buffer = calloc(56000, sizeof(char));
 
     send(client_fd, username, strlen(username), 0);
 
-    printf("\e[1;1H\e[2J");
-    read(client_fd, chat_buffer, 56000 * sizeof(char));
-    printf("%s\n", chat_buffer);
+
+    pthread_t thread;
+    pthread_create(&thread, NULL, client_read_thread, (void*)&client_fd);
 
     while (1)
     {
@@ -67,17 +88,13 @@ void client_connect(const char* username)
 
         snprintf(buffer_send, sizeof(buffer_send), "%s: %s", username, input);
         send(client_fd, buffer_send, strlen(buffer_send), 0);
-
-        read(client_fd, chat_buffer, 56000 * sizeof(char));
-        printf("\e[1;1H\e[2J");
-        printf("%s\n", chat_buffer);
     }
     
     
-    // valread = read(client_fd, buffer, 1024 - 1);
+    pthread_join(thread, NULL);
 
 out:
     close(client_fd);
-
+    pthread_mutex_destroy(&lock);
     return;
 }
