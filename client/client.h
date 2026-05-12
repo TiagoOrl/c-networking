@@ -10,7 +10,6 @@
 
 char* chat_buffer;
 int retry = 6;
-pthread_mutex_t lock;
 
 
 void net_error(const char* msg)
@@ -43,8 +42,6 @@ void client_connect(const char* username)
     int status, valread, client_fd;
     struct sockaddr_in serv_addr;
     char buffer[1024] = {0};
-
-    pthread_mutex_init(&lock, NULL);
 
     client_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (client_fd < 0)
@@ -95,6 +92,5 @@ void client_connect(const char* username)
 
 out:
     close(client_fd);
-    pthread_mutex_destroy(&lock);
     return;
 }
