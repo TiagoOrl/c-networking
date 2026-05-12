@@ -57,9 +57,17 @@ int server_accept_new_conn(struct sockaddr_in* address, int server_fd, socklen_t
 }
 
 
-void server_broadcast(int client_fd)
+void server_broadcast_all(char* c_buffer, unsigned long size)
 {
-
+    for (int i = 0; i < CHAT_CLIENT_MAX_CONN; i++)
+    {
+        if (clients[i].is_connected == 1)
+        {
+            ssize_t send_res = send(clients[i].client_fd, c_buffer, size, 0);
+            if (send_res < 0 )
+                printf("%ld: error on sending message/n", send_res);
+        }
+    }
 }
 
 void* server_client_conn(void* arg)
@@ -69,17 +77,20 @@ void* server_client_conn(void* arg)
     char tmp_buffer[80];
     struct client* client = (struct client*) arg;
 
-    read(client->client_fd, buffer, sizeof(buffer) - 1);   // get username
+    int n = read(client->client_fd, buffer, sizeof(buffer) - 1);
+    if (n > 0) buffer[n] = '\0'; 
     strncpy(client->name, buffer, 20);
-    sprintf(tmp_buffer, "(%i):%s connected\n", client->id, client->name);
-    printf("(%i):%s connected\n", client->id, client->name);
+    snprintf(tmp_buffer, 80, "(%i):%s connected\n", client->id, client->name);
+    
+    pthread_mutex_lock(&lock);
     strcat(chat_buffer, tmp_buffer);
-
-    send(client->client_fd, chat_buffer, CHAT_BUFFER_SIZE * sizeof(char), 0);
+    server_broadcast_all(chat_buffer, strlen(chat_buffer));
+    pthread_mutex_unlock(&lock);
+    
 
     while (1)
     {
-        memset(&buffer, 0, sizeof(buffer));
+        memset(buffer, 0, sizeof(buffer));
         size_t res_read = read(client->client_fd, buffer, sizeof(buffer) - 1);
 
         if (res_read <= 0 || strncmp(buffer, "$end", 4) == 0)
@@ -92,11 +103,16 @@ void* server_client_conn(void* arg)
         {
             printf("\e[1;1H\e[2J");
             pthread_mutex_lock(&lock);
+
+            if (strlen(buffer) + strlen(chat_buffer) < CHAT_BUFFER_SIZE - 1)
+            {
+                strcat(chat_buffer, buffer);
+                server_broadcast_all(chat_buffer, strlen(chat_buffer));
+            }
             
-            strcat(chat_buffer, buffer);
-            send(client->client_fd, chat_buffer, CHAT_BUFFER_SIZE * sizeof(char), 0);
             pthread_mutex_unlock(&lock);
             printf("%s\n", chat_buffer);
+            
         }
     }
 
@@ -144,7 +160,7 @@ void server_start(unsigned short port)
     socklen_t addrlen = sizeof(address);
     int opt = 1;
     char buffer[1024] = {0};
-    chat_buffer = malloc(CHAT_BUFFER_SIZE * sizeof(char));
+    chat_buffer = calloc(CHAT_BUFFER_SIZE, sizeof(char));
     pthread_mutex_init(&lock, NULL);
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
 
