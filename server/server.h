@@ -124,7 +124,7 @@ void* server_client_conn_thread(void* arg)
 
             if (strlen(in_buffer) + strlen(chat_buffer) < CHAT_BUFFER_SIZE - 1)
             {
-                strcat(chat_buffer, in_buffer);
+                strncat(chat_buffer, in_buffer, strlen(in_buffer));
                 server_broadcast_all(chat_buffer, strlen(chat_buffer));
             }
             
